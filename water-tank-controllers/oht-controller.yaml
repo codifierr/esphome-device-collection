@@ -18,7 +18,7 @@ substitutions:
   action_interval_threshold: "5000"  # Milliseconds minimum between actions
   dry_run_wait_period: "7200"  # Dry run protection wait time (2 hours in seconds)
   dry_run_check_delay: "90"  # Seconds to wait after pump start before dry run monitoring
-  dry_run_check_interval: "180"  # Seconds between dry run level comparisons
+  dry_run_check_interval: "600"  # Seconds between dry run level comparisons
   min_water_level_increase: "2"  # Minimum percentage increase per check interval
   restart_delay: "2000"  # Milliseconds to wait before device restart
   
