@@ -162,7 +162,7 @@ sensor:
       - sliding_window_moving_average:
           window_size: 8
           send_every: 1
-      - throttle: 4s
+      - throttle: 10s
     on_value:
       then:
         - lambda: |-
