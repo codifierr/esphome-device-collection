@@ -19,32 +19,29 @@ A comprehensive collection of ESPHome configurations for various IoT devices and
    ```yaml
    wifi_ssid: "Your WiFi"
    wifi_password: "password"
-   mqtt_broker: "192.168.1.100"
+   mqtt_broker: "mqttbroker.local"
    # ... etc
    ```
 
 ## 📂 Device Categories
 
 ### 💧 [Water Tank Controllers](./water-tank-controllers/)
-- **Basic Tank Controller** - Simple water level monitoring
-- **Advanced with Scheduling** - Automated pump control with dry-run protection
-- **Multi-Tank Setup** - Monitor multiple tanks
+- **OHT Controller** - Ultrasonic water level monitoring and pump control
 
 ### 🌡️ [Climate Sensors](./climate-sensors/)
-- **DHT11/DHT22** - Temperature and humidity monitoring
-- **Advanced Climate Station** - Multiple sensors with data logging
+- **DHT11/DHT22 Climate Sensor** - Temperature and humidity monitoring
 
 ### 🔌 [Relay Controllers](./relay-controllers/)
-- **Single Relay** - Basic on/off control
-- **Smart Switch** - Advanced switching with scheduling
+- **Single Relay Controller** - Basic on/off control
+- **Temperature Controlled Relay** - Relay control based on temperature sensor
 
 ## 🔧 Hardware Requirements
 
-| Device Type | MCU | Sensors | Additional |
-|-------------|-----|---------|------------|
-| Tank Controller | ESP32 | HC-SR04 | Relay Module |
-| Climate Sensor | ESP8266/ESP32 | DHT11/DHT22 | - |
-| Relay Controller | ESP8266/ESP32 | - | Relay Board |
+| Device Type           | MCU              | Sensors         | Additional         |
+|----------------------|------------------|----------------|--------------------|
+| OHT Controller       | ESP32            | HC-SR04        | Relay Module, Pump |
+| DHT Climate Sensor   | ESP8266 (NodeMCU)| DHT11/DHT22    | 4.7kΩ Resistor     |
+| Relay Controller     | ESP8266 (5V WiFi Relay Module) | Dallas/DS18B20 (optional) | Relay Board, Fan/Load |
 
 ## 📋 Features
 
@@ -63,11 +60,16 @@ A comprehensive collection of ESPHome configurations for various IoT devices and
 - MQTT Broker (optional)
 
 ### Steps
-1. Choose your device configuration
+1. Choose your device configuration from the relevant category
 2. Copy the YAML file to your ESPHome directory
 3. Update the `secrets.yaml` file
-4. Modify device-specific parameters
-5. Compile and upload
+4. Modify device-specific parameters (pins, sensor types, etc.)
+5. Compile and upload to your ESP device
+
+## 📑 Wiring Guides
+
+- See [wiring/README.md](./wiring/README.md) for wiring diagrams and connection details for each device
+- Device-specific wiring guides are available in each category's `wiring.md` file
 
 ## 🤝 Contributing
 
