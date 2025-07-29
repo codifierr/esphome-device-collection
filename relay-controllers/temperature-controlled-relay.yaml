@@ -57,7 +57,9 @@ switch:
 sensor:
   - platform: wifi_signal
     name: ${devicename} wifi signal
-    update_interval: 60s
+    update_interval: 30s
+    filters:
+      - delta: 2.0  # Only send if WiFi signal changes by 2 dBm or more
 
   - platform: dallas_temp
     address: 0x28FF641A2BFF
@@ -65,6 +67,9 @@ sensor:
     name: ${devicename} temperature
     id: temp_sensor
     update_interval: 10s
+    filters:
+      - filter_out: nan
+      - delta: 0.1 # Only send if temperature changes by 0.1°C or more
     on_value_range:
       - above: 44.0
         then:
