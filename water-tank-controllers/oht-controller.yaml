@@ -25,7 +25,7 @@ substitutions:
   # Template and display parameters
   json_buffer_size: "256"  # Buffer size for JSON data formatting
   # Scheduled run parameters
-  scheduled_run_duration: "3600"  # Scheduled run duration in seconds (5 minutes)
+  scheduled_run_duration: "3600"  # Scheduled run duration in seconds (1 hour)
   morning_run_hour: "11"  # Morning run at 11 AM
   morning_run_minute: "0"
   evening_run_hour: "15"  # Evening run at 3 PM (15:00)
@@ -195,8 +195,8 @@ sensor:
               return;
             }
             last_distance = distance_cm;
-            
-            int percentage = max(0, min(100, (int)(((${tank_height} - ${water_stop_distance} - distance_cm) * 100) / (${tank_height} - ${water_stop_distance}))));
+
+            int percentage = max(0, min(100, (int)(((${usable_tank_height} - distance_cm) * 100) / (${usable_tank_height}))));
             
             // Range validation
             if (distance_cm > ${max_range}) {
@@ -259,7 +259,7 @@ sensor:
       float distance_cm = id(ultrasonic_sensor).state * 100;
       if (isnan(distance_cm) || distance_cm <= 0) return {};
       // Calculate percentage based on full tank height (0-100% of usable space)
-      int percentage = max(0, min(100, (int)(((${tank_height} - ${water_stop_distance} - distance_cm) * 100) / (${tank_height} - ${water_stop_distance}))));
+      int percentage = max(0, min(100, (int)(((${usable_tank_height} - distance_cm) * 100) / (${usable_tank_height}))));
       return percentage;
     update_interval: 5s
 
@@ -353,7 +353,7 @@ interval:
           float distance_cm = id(ultrasonic_sensor).state * 100;
           if (isnan(distance_cm) || distance_cm <= 0) return;
           
-          int current_percentage = max(0, min(100, (int)(((${tank_height} - ${water_stop_distance} - distance_cm) * 100) / (${tank_height} - ${water_stop_distance}))));
+          int current_percentage = max(0, min(100, (int)(((${usable_tank_height} - distance_cm) * 100) / (${usable_tank_height}))));
           
           // Initialize tracking on first check
           if (id(last_check_time) == 0) {
