@@ -1,0 +1,442 @@
+esphome:
+  name: oht-wl-cont
+  friendly_name: OHT-WL-Cont
+
+substitutions:
+  # Modify variables based on your settings
+  devicename: OHT-WL-Cont
+  tank_height: "140"  # Tank height in cm
+  water_stop_distance: "25"  # Distance in cm to stop pump (tank full)
+  water_level_low: "70"  # Distance in cm to start pump (40% water level)
+  max_range: "450"  # Maximum sensor range in cm
+  usable_tank_height: "115"  # Usable tank height (140 - 25 = 115cm)
+  
+  # Timing and safety parameters
+  zero_distance_timeout: "60"  # Seconds to wait before restart on zero distance
+  pump_debounce_time: "10000"  # Milliseconds between pump actions
+  distance_change_threshold: "2.0"  # Minimum distance change to process (cm)
+  action_interval_threshold: "5000"  # Milliseconds minimum between actions
+  dry_run_wait_period: "7200"  # Dry run protection wait time (2 hours in seconds)
+  dry_run_check_delay: "90"  # Seconds to wait after pump start before dry run monitoring
+  dry_run_check_interval: "180"  # Seconds between dry run level comparisons
+  min_water_level_increase: "2"  # Minimum percentage increase per check interval
+  restart_delay: "2000"  # Milliseconds to wait before device restart
+  
+  # Template and display parameters
+  json_buffer_size: "256"  # Buffer size for JSON data formatting
+  # Scheduled run parameters
+  scheduled_run_duration: "3600"  # Scheduled run duration in seconds (5 minutes)
+  morning_run_hour: "11"  # Morning run at 11 AM
+  morning_run_minute: "0"
+  evening_run_hour: "15"  # Evening run at 3 PM (15:00)
+  evening_run_minute: "0"
+
+globals:
+  - id: pump_start_time
+    type: time_t
+    restore_value: false
+    initial_value: '0'
+  - id: dry_run_protection_active
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: zero_distance_start_time
+    type: time_t
+    restore_value: false
+    initial_value: '0'
+  - id: last_check_time
+    type: time_t
+    restore_value: false
+    initial_value: '0'
+  - id: last_check_level
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: scheduled_run_active
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: scheduled_run_start_time
+    type: time_t
+    restore_value: false
+    initial_value: '0'
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret ha_api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+captive_portal:
+
+# MQTT Configuration
+mqtt:
+  broker: !secret mqtt_broker
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+  discovery: true
+  discovery_retain: true
+  birth_message:
+    topic: ${devicename}/status
+    payload: online
+    retain: true
+  will_message:
+    topic: ${devicename}/status
+    payload: offline
+    retain: true
+
+switch:
+  - platform: restart
+    name: ${devicename} restart
+  - platform: gpio
+    pin: GPIO33
+    id: relay_switch
+    name: "${devicename} Relay Switch"
+    restore_mode: ALWAYS_OFF
+  - platform: template
+    name: "${devicename} Pump Protection"
+    id: pump_protection
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    name: "${devicename} Scheduled Runs"
+    id: scheduled_runs_enabled
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    name: "${devicename} Manual Scheduled Run"
+    id: manual_scheduled_run
+    lambda: return false;
+    turn_on_action:
+      - lambda: |-
+          if (id(scheduled_runs_enabled).state && id(pump_protection).state && 
+              !id(relay_switch).state && !id(dry_run_protection_active)) {
+            ESP_LOGI("main", "Manual scheduled run triggered");
+            id(scheduled_run_active) = true;
+            id(scheduled_run_start_time) = id(homeassistant_time).now().timestamp;
+            id(last_check_time) = 0;
+            id(last_check_level) = 0;
+            id(relay_switch).turn_on();
+          }
+      - delay: 1s
+      - lambda: id(manual_scheduled_run).turn_off();
+
+binary_sensor:
+  - platform: status
+    name: "${devicename} Status"
+
+sensor:
+  - platform: wifi_signal
+    name: "${devicename} wifi signal"
+    update_interval: 600s
+  
+  - platform: ultrasonic
+    trigger_pin: GPIO26
+    echo_pin: GPIO25
+    name: "Ultrasonic Sensor"
+    update_interval: 2s
+    id: ultrasonic_sensor
+    timeout: 2.6m
+    filters:
+      - filter_out: nan
+      - sliding_window_moving_average:
+          window_size: 3
+          send_every: 1
+      - throttle: 1s
+    on_value:
+      then:
+        - lambda: |-
+            static unsigned long last_pump_action = 0;
+            static float last_distance = 0;
+            unsigned long now = millis();
+            
+            float distance_cm = x * 100;
+            
+            // Zero distance safety check
+            if (distance_cm <= 0 || isnan(distance_cm)) {
+              if (id(zero_distance_start_time) == 0) {
+                auto time_now = id(homeassistant_time).now();
+                if (time_now.is_valid()) {
+                  id(zero_distance_start_time) = time_now.timestamp;
+                  ESP_LOGW("main", "Zero distance detected - starting safety timer");
+                }
+              } else {
+                auto time_now = id(homeassistant_time).now();
+                if (time_now.is_valid() && (time_now.timestamp - id(zero_distance_start_time)) >= ${zero_distance_timeout}) {
+                  ESP_LOGE("main", "Zero distance for %s seconds - stopping pump and restarting device", "${zero_distance_timeout}");
+                  if (id(relay_switch).state) id(relay_switch).turn_off();
+                  delay(${restart_delay});
+                  App.safe_reboot();
+                }
+              }
+              return;
+            } else {
+              id(zero_distance_start_time) = 0;
+            }
+            
+            // Skip processing if distance hasn't changed significantly
+            if (abs(distance_cm - last_distance) < ${distance_change_threshold} && 
+                (now - last_pump_action) < ${action_interval_threshold}) {
+              return;
+            }
+            last_distance = distance_cm;
+            
+            int percentage = max(0, min(100, (int)(((${tank_height} - ${water_stop_distance} - distance_cm) * 100) / (${tank_height} - ${water_stop_distance}))));
+            
+            // Range validation
+            if (distance_cm > ${max_range}) {
+              if (id(relay_switch).state) {
+                id(relay_switch).turn_off();
+                last_pump_action = now;
+              }
+              return;
+            }
+            
+            // Tank full - stop pump (including scheduled runs)
+            if (distance_cm <= ${water_stop_distance} && id(relay_switch).state && id(pump_protection).state) {
+              id(relay_switch).turn_off();
+              id(dry_run_protection_active) = false;
+              id(pump_start_time) = 0;
+              if (id(scheduled_run_active)) {
+                ESP_LOGI("main", "Scheduled run stopped - tank full");
+                id(scheduled_run_active) = false;
+                id(scheduled_run_start_time) = 0;
+              }
+              last_pump_action = now;
+              return;
+            }
+            
+            // Tank low - start pump (only if no conflicts)
+            if (distance_cm > ${water_level_low} && !id(relay_switch).state && 
+                id(pump_protection).state && !id(dry_run_protection_active) && 
+                !id(scheduled_run_active) && (now - last_pump_action) > ${pump_debounce_time}) {
+              id(relay_switch).turn_on();
+              id(pump_start_time) = id(homeassistant_time).now().timestamp;
+              id(last_check_time) = id(homeassistant_time).now().timestamp;
+              id(last_check_level) = percentage;
+              last_pump_action = now;
+            }
+
+  # Water level in tank (calculated from ultrasonic distance)
+  - platform: template
+    name: "${devicename} Water Level"
+    id: water_level
+    unit_of_measurement: "cm"
+    accuracy_decimals: 0
+    device_class: distance
+    state_class: measurement
+    lambda: |-
+      float distance_cm = id(ultrasonic_sensor).state * 100;
+      if (isnan(distance_cm) || distance_cm <= 0) return {};
+      int water_level_cm = ${tank_height} - distance_cm;
+      return max(0, water_level_cm);
+    update_interval: 5s
+
+  # Water level percentage
+  - platform: template
+    name: "${devicename} Water Level Percentage"
+    id: water_level_percentage
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    device_class: battery
+    state_class: measurement
+    lambda: |-
+      float distance_cm = id(ultrasonic_sensor).state * 100;
+      if (isnan(distance_cm) || distance_cm <= 0) return {};
+      // Calculate percentage based on full tank height (0-100% of usable space)
+      int percentage = max(0, min(100, (int)(((${tank_height} - ${water_stop_distance} - distance_cm) * 100) / (${tank_height} - ${water_stop_distance}))));
+      return percentage;
+    update_interval: 5s
+
+time:
+  - platform: sntp
+    id: homeassistant_time
+    timezone: "Asia/Kolkata"  # Change to your timezone
+    servers:
+      - "homeassistant.local"  # Your Home Assistant server with Chrony
+      - "pool.ntp.org"         # Fallback server
+    update_interval: 15min
+    on_time:
+      # Morning run at 11:00 AM
+      - hours: ${morning_run_hour}
+        minutes: ${morning_run_minute}
+        seconds: 0
+        then:
+          - lambda: |-
+              ESP_LOGI("main", "Starting scheduled morning pump run");
+              if (id(scheduled_runs_enabled).state && id(pump_protection).state && 
+                  !id(relay_switch).state && !id(dry_run_protection_active)) {
+                id(scheduled_run_active) = true;
+                id(scheduled_run_start_time) = id(homeassistant_time).now().timestamp;
+                id(last_check_time) = 0;
+                id(last_check_level) = 0;
+                id(relay_switch).turn_on();
+              }
+      
+      # Evening run at 3:00 PM
+      - hours: ${evening_run_hour}
+        minutes: ${evening_run_minute}
+        seconds: 0
+        then:
+          - lambda: |-
+              ESP_LOGI("main", "Starting scheduled evening pump run");
+              if (id(scheduled_runs_enabled).state && id(pump_protection).state && 
+                  !id(relay_switch).state && !id(dry_run_protection_active)) {
+                id(scheduled_run_active) = true;
+                id(scheduled_run_start_time) = id(homeassistant_time).now().timestamp;
+                id(last_check_time) = 0;
+                id(last_check_level) = 0;
+                id(relay_switch).turn_on();
+              }
+
+interval:
+  - interval: 30s  # Check every 30 seconds for more responsive dry run detection
+    then:
+      - lambda: |-
+          // Handle scheduled run duration
+          if (id(scheduled_run_active)) {
+            auto now = id(homeassistant_time).now();
+            if (now.is_valid() && (now.timestamp - id(scheduled_run_start_time)) >= ${scheduled_run_duration}) {
+              ESP_LOGI("main", "Scheduled run duration completed - stopping pump");
+              id(relay_switch).turn_off();
+              id(scheduled_run_active) = false;
+              id(scheduled_run_start_time) = 0;
+              id(pump_start_time) = 0;
+              id(last_check_time) = 0;
+              id(last_check_level) = 0;
+              return;
+            }
+          }
+          
+          // Dry run protection for both regular and scheduled runs
+          if (!id(relay_switch).state || !id(pump_protection).state) return;
+          
+          time_t effective_pump_start_time = id(scheduled_run_active) ? 
+            id(scheduled_run_start_time) : id(pump_start_time);
+          
+          if (effective_pump_start_time == 0) return;
+          
+          // Check if dry run wait period is over
+          if (id(dry_run_protection_active)) {
+            auto now = id(homeassistant_time).now();
+            if (now.is_valid() && (now.timestamp - id(pump_start_time)) > ${dry_run_wait_period}) {
+              ESP_LOGI("main", "Dry run wait period ended, ready to restart");
+              id(dry_run_protection_active) = false;
+              id(pump_start_time) = 0;
+              id(last_check_time) = 0;
+              id(last_check_level) = 0;
+            }
+            return;
+          }
+          
+          auto now = id(homeassistant_time).now();
+          if (!now.is_valid()) return;
+          
+          // Wait before starting dry run monitoring
+          if ((now.timestamp - effective_pump_start_time) < ${dry_run_check_delay}) return;
+          
+          float distance_cm = id(ultrasonic_sensor).state * 100;
+          if (isnan(distance_cm) || distance_cm <= 0) return;
+          
+          int current_percentage = max(0, min(100, (int)(((${tank_height} - ${water_stop_distance} - distance_cm) * 100) / (${tank_height} - ${water_stop_distance}))));
+          
+          // Initialize tracking on first check
+          if (id(last_check_time) == 0) {
+            id(last_check_time) = now.timestamp;
+            id(last_check_level) = current_percentage;
+            ESP_LOGI("main", "Starting dry run monitoring at %d%% level", current_percentage);
+            return;
+          }
+          
+          // Check water level progress
+          if ((now.timestamp - id(last_check_time)) >= ${dry_run_check_interval}) {
+            int level_change = current_percentage - id(last_check_level);
+            
+            ESP_LOGI("main", "Dry run check: Level changed from %d%% to %d%% (%+d%%) in %d seconds", 
+                     id(last_check_level), current_percentage, level_change, 
+                     (int)(now.timestamp - id(last_check_time)));
+            
+            if (level_change < ${min_water_level_increase}) {
+              ESP_LOGW("main", "Dry run detected: Only %+d%% increase in %s seconds - stopping pump", level_change, "${dry_run_check_interval}");
+              id(relay_switch).turn_off();
+              id(dry_run_protection_active) = true;
+              id(pump_start_time) = now.timestamp;
+              id(last_check_time) = 0;
+              id(last_check_level) = 0;
+              if (id(scheduled_run_active)) {
+                ESP_LOGI("main", "Scheduled run stopped due to dry run protection");
+                id(scheduled_run_active) = false;
+                id(scheduled_run_start_time) = 0;
+              }
+            } else {
+              ESP_LOGI("main", "Water flowing normally: %+d%% increase", level_change);
+              id(last_check_time) = now.timestamp;
+              id(last_check_level) = current_percentage;
+            }
+          }
+
+# Text sensors with general information.
+text_sensor:
+  # Expose ESPHome version as sensor.
+  - platform: version
+    name: $devicename Version
+  # Expose WiFi information as sensors.
+  - platform: wifi_info
+    ip_address:
+      name: $devicename IP
+    bssid:
+      name: $devicename BSSID
+
+  # human readable update text sensor from sensor:uptime
+  - platform: template
+    name: Uptime Human Readable
+    id: uptime_human
+    icon: mdi:clock-start
+  
+  # Dry run protection status
+  - platform: template
+    name: "${devicename} Protection Status"
+    lambda: |-
+      if (id(dry_run_protection_active)) {
+        return {"Dry Run Active"};
+      } else if (id(pump_protection).state) {
+        return {"Normal"};
+      } else {
+        return {"Disabled"};
+      }
+    update_interval: 10s
+    
+  # Pump status with detailed information
+  - platform: template
+    name: "${devicename} Pump Status"
+    lambda: |-
+      if (id(relay_switch).state) {
+        if (id(scheduled_run_active)) {
+          auto now = id(homeassistant_time).now();
+          int remaining_time = ${scheduled_run_duration} - (now.timestamp - id(scheduled_run_start_time));
+          static char buffer[32];
+          snprintf(buffer, sizeof(buffer), "Scheduled (%ds)", max(0, remaining_time));
+          return {buffer};
+        } else if (id(dry_run_protection_active)) {
+          return {"Paused"};
+        } else {
+          return {"Running"};
+        }
+      }
+      return {"Stopped"};
+    update_interval: 5s
