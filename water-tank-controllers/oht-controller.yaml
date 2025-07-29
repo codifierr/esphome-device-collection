@@ -412,6 +412,7 @@ text_sensor:
     name: Uptime Human Readable
     id: uptime_human
     icon: mdi:clock-start
+    update_interval: 600s
   
   # Dry run protection status
   - platform: template

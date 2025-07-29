@@ -76,7 +76,7 @@ sensor:
   - platform: uptime
     name: ${devicename} Uptime in Days
     id: uptime_sensor_days
-    update_interval: 60s
+    update_interval: 600s
     on_raw_value:
       then:
         - text_sensor.template.publish:
@@ -122,4 +122,5 @@ text_sensor:
     name: Uptime Human Readable
     id: uptime_human
     icon: mdi:clock-start
+    update_interval: 600s
     
