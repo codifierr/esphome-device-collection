@@ -6,15 +6,15 @@ This directory contains wiring diagrams and connection guides for all device con
 
 ### Water Tank Controllers
 
-- `../water-tank-controllers/wiring.md` - Water tank controller wiring details
+- [Water tank controller wiring details](../water-tank-controllers/wiring.md)
 
 ### Climate Sensors
 
-- `../climate-sensors/wiring.md` - DHT climate sensor wiring details
+- [DHT climate sensor wiring details](../climate-sensors/wiring.md)
 
 ### Relay Controllers
 
-- `../relay-controllers/wiring.md` - Relay controller wiring details
+- [Relay controller wiring details](../relay-controllers/wiring.md)
 
 ## Safety Guidelines
 
