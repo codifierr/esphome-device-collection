@@ -157,7 +157,7 @@ sensor:
       - sliding_window_moving_average:
           window_size: 3
           send_every: 1
-      - throttle: 1s
+      - throttle: 2s
     on_value:
       then:
         - lambda: |-
@@ -196,7 +196,7 @@ sensor:
             }
             last_distance = distance_cm;
 
-            int percentage = max(0, min(100, (int)(((${usable_tank_height} - distance_cm) * 100) / (${usable_tank_height}))));
+            int percentage = max(0, min(100, (int)(((${tank_height} - distance_cm) * 100) / (${usable_tank_height}))));
             
             // Range validation
             if (distance_cm > ${max_range}) {
@@ -259,7 +259,7 @@ sensor:
       float distance_cm = id(ultrasonic_sensor).state * 100;
       if (isnan(distance_cm) || distance_cm <= 0) return {};
       // Calculate percentage based on full tank height (0-100% of usable space)
-      int percentage = max(0, min(100, (int)(((${usable_tank_height} - distance_cm) * 100) / (${usable_tank_height}))));
+      int percentage = max(0, min(100, (int)(((${tank_height} - distance_cm) * 100) / (${usable_tank_height}))));
       return percentage;
     update_interval: 5s
 
@@ -353,7 +353,7 @@ interval:
           float distance_cm = id(ultrasonic_sensor).state * 100;
           if (isnan(distance_cm) || distance_cm <= 0) return;
           
-          int current_percentage = max(0, min(100, (int)(((${usable_tank_height} - distance_cm) * 100) / (${usable_tank_height}))));
+          int current_percentage = max(0, min(100, (int)(((${tank_height} - distance_cm) * 100) / (${usable_tank_height}))));
           
           // Initialize tracking on first check
           if (id(last_check_time) == 0) {
