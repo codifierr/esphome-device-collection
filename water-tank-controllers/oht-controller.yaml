@@ -143,7 +143,9 @@ binary_sensor:
 sensor:
   - platform: wifi_signal
     name: "${devicename} wifi signal"
-    update_interval: 600s
+    update_interval: 30s
+    filters:
+      - delta: 2.0  # Only send if WiFi signal changes by 2 dBm or more
   
   - platform: ultrasonic
     trigger_pin: GPIO26
@@ -154,10 +156,13 @@ sensor:
     timeout: 2.6m
     filters:
       - filter_out: nan
-      - sliding_window_moving_average:
-          window_size: 3
+      - median:  # Add median filter to remove outliers
+          window_size: 5
           send_every: 1
-      - throttle: 2s
+      - sliding_window_moving_average:
+          window_size: 8
+          send_every: 1
+      - throttle: 4s
     on_value:
       then:
         - lambda: |-
