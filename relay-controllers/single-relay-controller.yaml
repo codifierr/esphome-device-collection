@@ -58,6 +58,8 @@ sensor:
   - platform: wifi_signal
     name: ${devicename} wifi signal
     update_interval: 60s
+    filters:
+      - delta: 2.0  # Only send if WiFi signal changes by 2 dBm or more
 
   # human readable uptime sensor output to the text sensor above
   - platform: uptime
