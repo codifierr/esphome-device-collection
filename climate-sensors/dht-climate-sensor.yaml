@@ -53,20 +53,24 @@ sensor:
   - platform: wifi_signal
     name: ${devicename} wifi signal
     update_interval: 60s
-  
+    filters:
+      - delta: 2.0  # Only send if WiFi signal changes by 2 dBm or more
   - platform: dht
     pin:
       number: GPIO14
       mode:
         input: true
         pullup: true
-    
     temperature:
       name: " $devicename Temp"
+      filters:
+        - delta: 0.1  # Only send if temperature changes by 0.1°C or more
     humidity:
       accuracy_decimals: 1
       name: " $devicename Humidity"
-    update_interval: 10s
+      filters:
+        - delta: 0.5  # Only send if humidity changes by 0.5% or more
+    update_interval: 5s
 
   # human readable uptime sensor output to the text sensor above
   - platform: uptime
