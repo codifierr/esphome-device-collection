@@ -152,8 +152,10 @@ sensor:
     echo_pin: GPIO25
     name: "Ultrasonic Sensor"
     update_interval: 2s
+    pulse_time: 
+      microseconds: 20
     id: ultrasonic_sensor
-    timeout: 2.6m
+    timeout: 4.5m
     filters:
       - filter_out: nan
       - median:  # Add median filter to remove outliers
