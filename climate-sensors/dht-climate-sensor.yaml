@@ -101,7 +101,7 @@ time:
     id: homeassistant_time
     timezone: "Asia/Kolkata"  # Change to your timezone
     servers:
-      - "ssinghhac.duckdns.org"  # Your Home Assistant server with Chrony
+      - "homeassistant.local"  # Your Home Assistant server with Chrony
       - "pool.ntp.org"         # Fallback server
     update_interval: 15min
 
