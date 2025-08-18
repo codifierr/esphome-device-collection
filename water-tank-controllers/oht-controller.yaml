@@ -7,7 +7,7 @@ substitutions:
   devicename: OHT-WL-Cont
   tank_height: "140"  # Tank height in cm
   water_stop_distance: "25"  # Distance in cm to stop pump (tank full)
-  water_level_low: "70"  # Distance in cm to start pump (40% water level)
+  water_level_low: "90"  # Distance in cm to start pump (40% water level)
   max_range: "450"  # Maximum sensor range in cm
   usable_tank_height: "115"  # Usable tank height (140 - 25 = 115cm)
   
@@ -16,16 +16,14 @@ substitutions:
   pump_debounce_time: "10000"  # Milliseconds between pump actions
   distance_change_threshold: "2.0"  # Minimum distance change to process (cm)
   action_interval_threshold: "5000"  # Milliseconds minimum between actions
-  dry_run_wait_period: "7200"  # Dry run protection wait time (2 hours in seconds)
-  dry_run_check_delay: "90"  # Seconds to wait after pump start before dry run monitoring
-  dry_run_check_interval: "600"  # Seconds between dry run level comparisons
+  dry_run_wait_period: "3600"  # Dry run protection wait time (2 hours in seconds)
+  dry_run_check_delay: "120"  # Seconds to wait after pump start before dry run monitoring
+  dry_run_check_interval: "360"  # Seconds between dry run level comparisons
   min_water_level_increase: "2"  # Minimum percentage increase per check interval
   restart_delay: "2000"  # Milliseconds to wait before device restart
   
-  # Template and display parameters
-  json_buffer_size: "256"  # Buffer size for JSON data formatting
   # Scheduled run parameters
-  scheduled_run_duration: "3600"  # Scheduled run duration in seconds (1 hour)
+  scheduled_run_duration: "3600"  # Scheduled run duration in seconds (5 minutes)
   morning_run_hour: "11"  # Morning run at 11 AM
   morning_run_minute: "0"
   evening_run_hour: "15"  # Evening run at 3 PM (15:00)
@@ -275,9 +273,9 @@ time:
     id: homeassistant_time
     timezone: "Asia/Kolkata"  # Change to your timezone
     servers:
-      - "homeassistant.local"  # Your Home Assistant server with Chrony
-      - "pool.ntp.org"         # Fallback server
-    update_interval: 15min
+      - !secret ntp_server_1  # Your Primary server with Chrony
+      - !secret ntp_server_2  # Your Secondary server with Chrony
+    update_interval: 10min
     on_time:
       # Morning run at 11:00 AM
       - hours: ${morning_run_hour}
