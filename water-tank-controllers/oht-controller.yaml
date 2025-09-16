@@ -58,19 +58,30 @@ globals:
     type: time_t
     restore_value: false
     initial_value: '0'
+  - id: last_sensor_reading_time
+    type: unsigned long
+    restore_value: false
+    initial_value: '0'
+  - id: sensor_timeout_count
+    type: int
+    restore_value: false
+    initial_value: '0'
 
 esp32:
   board: esp32dev
   framework:
     type: esp-idf
 
+network:
+  enable_ipv6: true
+
 # Enable logging
 logger:
 
 # Enable Home Assistant API
-api:
-  encryption:
-    key: !secret ha_api_key
+# api:
+#   encryption:
+#     key: !secret ha_api_key
 
 ota:
   - platform: esphome
@@ -149,28 +160,41 @@ sensor:
     trigger_pin: GPIO26
     echo_pin: GPIO25
     name: "Ultrasonic Sensor"
-    update_interval: 2s
+    update_interval: 5s  # Increased from 2s to reduce load
     pulse_time: 
-      microseconds: 20
+      microseconds: 50  # Increased from 20μs for better reliability
     id: ultrasonic_sensor
     timeout: 4.5m
     filters:
       - filter_out: nan
-      - median:  # Add median filter to remove outliers
-          window_size: 5
+      - lambda: |-
+          // Enhanced validation and error handling
+          if (isnan(x) || x <= 0 || x > 4.5) {  // Max range check (4.5m)
+            ESP_LOGW("ultrasonic", "Invalid reading: %.2f m", x);
+            return {};  // Filter out invalid readings
+          }
+          return x;
+      - median:  # Remove outliers
+          window_size: 5  # Reduced window size for faster response
           send_every: 1
       - sliding_window_moving_average:
-          window_size: 8
+          window_size: 8  # Reduced window size
           send_every: 1
-      - throttle: 10s
+      - heartbeat: 30s  # Ensure regular updates even if value doesn't change
+      - throttle: 5s  # Reduced throttle time
     on_value:
       then:
         - lambda: |-
             static unsigned long last_pump_action = 0;
             static float last_distance = 0;
+            static unsigned long last_valid_reading = 0;
             unsigned long now = millis();
             
             float distance_cm = x * 100;
+            
+            // Reset timeout counter on valid reading
+            id(last_sensor_reading_time) = now;
+            id(sensor_timeout_count) = 0;
             
             // Zero distance safety check
             if (distance_cm <= 0 || isnan(distance_cm)) {
@@ -395,6 +419,32 @@ interval:
             }
           }
 
+  # Sensor health monitoring interval
+  - interval: 60s  # Check sensor health every minute
+    then:
+      - lambda: |-
+          unsigned long now = millis();
+          
+          // Check if sensor has been silent for too long (5 minutes = 300,000ms)
+          if (id(last_sensor_reading_time) > 0 && (now - id(last_sensor_reading_time)) > 300000) {
+            id(sensor_timeout_count)++;
+            ESP_LOGW("main", "Sensor timeout detected! No readings for %d seconds (timeout count: %d)", 
+                     (now - id(last_sensor_reading_time)) / 1000, id(sensor_timeout_count));
+            
+            // Stop pump for safety if sensor has been timing out
+            if (id(sensor_timeout_count) >= 3 && id(relay_switch).state) {
+              ESP_LOGE("main", "Multiple sensor timeouts - stopping pump for safety");
+              id(relay_switch).turn_off();
+            }
+            
+            // Restart device after 5 consecutive timeouts (5 minutes of no sensor data)
+            if (id(sensor_timeout_count) >= 5) {
+              ESP_LOGE("main", "Sensor completely unresponsive - restarting device");
+              delay(${restart_delay});
+              App.safe_reboot();
+            }
+          }
+
 # Text sensors with general information.
 text_sensor:
   # Expose ESPHome version as sensor.
@@ -404,8 +454,18 @@ text_sensor:
   - platform: wifi_info
     ip_address:
       name: $devicename IP
+      address_0:
+        name: $devicename IPv4
+      address_1:
+        name: $devicename IPv6 Local Link
+      address_2:
+        name: $devicename IPV6 1
+      address_3:
+        name: $devicename IPV6 2
+      update_interval: 5min
     bssid:
       name: $devicename BSSID
+      update_interval: 5min
 
   # human readable update text sensor from sensor:uptime
   - platform: template
@@ -446,3 +506,28 @@ text_sensor:
       }
       return {"Stopped"};
     update_interval: 5s
+    
+  # Sensor health status
+  - platform: template
+    name: "${devicename} Sensor Status"
+    lambda: |-
+      unsigned long now = millis();
+      if (id(last_sensor_reading_time) == 0) {
+        return {"Initializing"};
+      }
+      
+      unsigned long time_since_last = now - id(last_sensor_reading_time);
+      int timeout_count = id(sensor_timeout_count);
+      
+      if (time_since_last < 30000) {  // Less than 30 seconds
+        return {"Online"};
+      } else if (time_since_last < 120000) {  // Less than 2 minutes
+        return {"Warning"};
+      } else if (timeout_count < 3) {
+        static char buffer[32];
+        snprintf(buffer, sizeof(buffer), "Timeout (%ds)", (int)(time_since_last / 1000));
+        return {buffer};
+      } else {
+        return {"Critical"};
+      }
+    update_interval: 10s
