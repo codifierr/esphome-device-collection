@@ -128,12 +128,24 @@ switch:
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
   - platform: template
+    name: "${devicename} Morning Run Enabled"
+    id: morning_run_enabled
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    name: "${devicename} Evening Run Enabled"
+    id: evening_run_enabled
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+  - platform: template
     name: "${devicename} Manual Scheduled Run"
     id: manual_scheduled_run
     lambda: return false;
     turn_on_action:
       - lambda: |-
-          if (id(scheduled_runs_enabled).state && id(pump_protection).state && 
+          if (id(scheduled_runs_enabled).state && 
+              (id(morning_run_enabled).state || id(evening_run_enabled).state) && 
+              id(pump_protection).state && 
               !id(relay_switch).state && !id(dry_run_protection_active)) {
             ESP_LOGI("main", "Manual scheduled run triggered");
             id(scheduled_run_active) = true;
@@ -307,9 +319,10 @@ time:
         seconds: 0
         then:
           - lambda: |-
-              ESP_LOGI("main", "Starting scheduled morning pump run");
-              if (id(scheduled_runs_enabled).state && id(pump_protection).state && 
-                  !id(relay_switch).state && !id(dry_run_protection_active)) {
+              if (id(scheduled_runs_enabled).state && id(morning_run_enabled).state && 
+                  id(pump_protection).state && !id(relay_switch).state && 
+                  !id(dry_run_protection_active)) {
+                ESP_LOGI("main", "Starting scheduled morning pump run");
                 id(scheduled_run_active) = true;
                 id(scheduled_run_start_time) = id(homeassistant_time).now().timestamp;
                 id(last_check_time) = 0;
@@ -323,9 +336,10 @@ time:
         seconds: 0
         then:
           - lambda: |-
-              ESP_LOGI("main", "Starting scheduled evening pump run");
-              if (id(scheduled_runs_enabled).state && id(pump_protection).state && 
-                  !id(relay_switch).state && !id(dry_run_protection_active)) {
+              if (id(scheduled_runs_enabled).state && id(evening_run_enabled).state && 
+                  id(pump_protection).state && !id(relay_switch).state && 
+                  !id(dry_run_protection_active)) {
+                ESP_LOGI("main", "Starting scheduled evening pump run");
                 id(scheduled_run_active) = true;
                 id(scheduled_run_start_time) = id(homeassistant_time).now().timestamp;
                 id(last_check_time) = 0;
